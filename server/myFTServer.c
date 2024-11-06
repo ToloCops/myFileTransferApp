@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
     }
 
     char *server_address = NULL;
-    int server_port = 0;
+    int   server_port    = 0;
     char *root_directory = NULL;
 
     // Parsing arguments
@@ -49,9 +49,30 @@ int main(int argc, char *argv[]) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (server_fd == -1) {
-        perror("Socket creation failed.\n");
+        perror("Socket creation failed.");
         exit(EXIT_FAILURE);
     }
+
+    struct sockaddr_in server_addr;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port   = htons(server_port);
+    inet_pton(AF_INET, server_address, &server_addr.sin_addr);
+
+    // Bind
+    if (bind(server_fd, (struct sockaddr*) &server_addr, sizeof(server_addr)) == -1) {
+        perror("Binding failed.");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Start listening
+    if (listen(server_fd, 10) == -1) {
+        perror("Listen failed.");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Server in ascolto su %s:%d\n", server_address, server_port);
 }
 
 void setup_directory(const char *dir_path) {
