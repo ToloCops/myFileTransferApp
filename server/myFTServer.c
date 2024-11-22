@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #define BUFFER_SIZE 1024
 
@@ -132,6 +133,65 @@ void *handle_client(void *arg)
         buffer[bytes_received] = '\0';
         printf("Comando ricevuto: %s\n", buffer);
         // Qui va aggiunta la gestione dei vari comandi
+        if (strncmp(buffer, "LIST", 4) == 0)
+        {
+            char *relative_path = buffer + 4; // Ottieni l'argomento dopo "LIST"
+            while (*relative_path == ' ')
+                relative_path++; // Ignora eventuali spazi
+
+            // Costruisci il percorso completo
+            char full_path[BUFFER_SIZE];
+            snprintf(full_path, sizeof(full_path), "%s/%s", client_data->root_directory, relative_path);
+
+            // Normalizza il percorso per evitare directory traversal
+            char real_path[BUFFER_SIZE];
+            if (realpath(full_path, real_path) == NULL || strncmp(real_path, client_data->root_directory, strlen(client_data->root_directory)) != 0)
+            {
+                const char *error_msg = "ERR: Access to directory not allowed\n";
+                send(client_fd, error_msg, strlen(error_msg), 0);
+                continue;
+            }
+
+            // Apri la directory
+            DIR *dir = opendir(real_path);
+            if (dir == NULL)
+            {
+                perror("Failed to open directory");
+                const char *error_msg = "ERR: Unable to open directory\n";
+                send(client_fd, error_msg, strlen(error_msg), 0);
+                continue;
+            }
+
+            // Leggi i contenuti della directory
+            struct dirent *entry;
+            char file_list[BUFFER_SIZE] = "";
+            while ((entry = readdir(dir)) != NULL)
+            {
+                if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
+                {
+                    strcat(file_list, entry->d_name);
+                    strcat(file_list, "\n");
+                }
+            }
+            closedir(dir);
+
+            if (strlen(file_list) == 0)
+            {
+                strcpy(file_list, "No files found in the directory.\n");
+            }
+
+            // Invia l'elenco dei file al client
+            send(client_fd, file_list, strlen(file_list), 0);
+
+            close(client_fd);
+            free(client_data);
+            return NULL;
+        }
+        else
+        {
+            const char *error_msg = "ERR: Command not recognized\n";
+            send(client_fd, error_msg, strlen(error_msg), 0);
+        }
     }
 
     close(client_fd);
