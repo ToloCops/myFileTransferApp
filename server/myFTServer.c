@@ -20,7 +20,9 @@ void *handle_client(void *arg);
 
 void setup_directory(const char *dir_path);
 
-int get_file_list(const char *dir_path, const char *root, char *file_list);
+void get_file_list(const char *dir_path, const char *root, int client_fd);
+
+void write_file(const char *dir_path, const char *root, int client_fd);
 
 int main(int argc, char *argv[])
 {
@@ -29,7 +31,7 @@ int main(int argc, char *argv[])
     {
         fprintf(
             stderr,
-            "Usage: %s -a server_address -p server_port -d ft_root_directory\n");
+            "Usage: %s -a server_address -p server_port -d ft_root_directory\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
@@ -134,32 +136,38 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-int get_file_list(const char *rel_path, const char *root, char *file_list)
+void get_file_list(const char *rel_path, const char *root, int client_fd)
 {
-    // Increment the relative path pointer to skip the space characters
+    // Incrementa il puntatore per saltare eventuali spazi all'inizio del percorso
     while (*rel_path == ' ')
         rel_path++;
 
-    // Create the full path
+    // Costruisce il percorso completo
     char full_path[BUFFER_SIZE];
     snprintf(full_path, sizeof(full_path), "%s/%s", root, rel_path);
 
-    // Check if the full path is within the root directory
+    // Controlla che il percorso sia all'interno della directory root
     char real_path[BUFFER_SIZE];
     if (realpath(full_path, real_path) == NULL || strncmp(real_path, root, strlen(root)) != 0)
     {
-        return 1;
+        const char *error_msg = "ERR: Access to directory not allowed\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
     }
 
-    // Open the directory
+    // Apre la directory
     DIR *dir = opendir(real_path);
     if (dir == NULL)
     {
-        return 2;
+        const char *error_msg = "ERR: Unable to open directory\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
     }
 
-    // Read the directory entries
+    // Prepara la lista dei file
+    char file_list[BUFFER_SIZE] = "";
     struct dirent *entry;
+
     while ((entry = readdir(dir)) != NULL)
     {
         if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0)
@@ -170,11 +178,71 @@ int get_file_list(const char *rel_path, const char *root, char *file_list)
     }
     closedir(dir);
 
+    // Controlla se la directory è vuota
     if (strlen(file_list) == 0)
     {
         strcpy(file_list, "No files found in the directory.\n");
     }
-    return 0;
+
+    // Invia la lista dei file al client
+    send(client_fd, file_list, strlen(file_list), 0);
+}
+
+void write_file(const char *dir_path, const char *root, int client_fd)
+{
+    // Salta eventuali spazi all'inizio del percorso
+    while (*dir_path == ' ')
+        dir_path++;
+
+    // Crea il percorso completo del file
+    char full_path[BUFFER_SIZE];
+    snprintf(full_path, sizeof(full_path), "%s/%s", root, dir_path);
+
+    // Controlla che il percorso sia all'interno della directory root
+    char real_path[BUFFER_SIZE];
+    if (realpath(full_path, real_path) == NULL || strncmp(real_path, root, strlen(root)) != 0)
+    {
+        const char *error_msg = "ERR: Access to file not allowed\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    // Apre il file in modalità scrittura
+    FILE *file = fopen(real_path, "wb");
+    if (file == NULL)
+    {
+        perror("Failed to open file");
+        const char *error_msg = "ERR: Unable to open file\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    // Buffer per ricevere i dati
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_received;
+
+    // Riceve i dati del file dal client
+    while ((bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
+    {
+        // Scrive i dati ricevuti nel file
+        if (fwrite(buffer, 1, bytes_received, file) != bytes_received)
+        {
+            perror("Failed to write to file");
+            fclose(file);
+            const char *error_msg = "ERR: Failed to write file\n";
+            send(client_fd, error_msg, strlen(error_msg), 0);
+            return;
+        }
+    }
+
+    // Chiude il file
+    fclose(file);
+
+    // Invia un messaggio di successo al client
+    const char *success_msg = "OK: File written successfully\n";
+    send(client_fd, success_msg, strlen(success_msg), 0);
+
+    return;
 }
 
 void *handle_client(void *arg)
@@ -194,29 +262,31 @@ void *handle_client(void *arg)
         // Check the command
         if (strncmp(buffer, "LIST", 4) == 0)
         {
-            char file_list[BUFFER_SIZE] = "";
             char *relative_path = buffer + 4;
-            int error_code = get_file_list(relative_path, client_data->root_directory, file_list);
-
-            switch (error_code)
-            {
-            case 1:
-                const char *error_msg = "ERR: Access to directory not allowed\n";
-                send(client_fd, error_msg, strlen(error_msg), 0);
-                break;
-            case 2:
-                perror("Failed to open directory");
-                const char *error_msg = "ERR: Unable to open directory\n";
-                send(client_fd, error_msg, strlen(error_msg), 0);
-                break;
-            default:
-                send(client_fd, file_list, strlen(file_list), 0);
-                break;
-            }
+            get_file_list(relative_path, client_data->root_directory, client_fd);
 
             close(client_fd);
             free(client_data);
             return NULL;
+        }
+        else if (strncmp(buffer, "WRITE", 5) == 0)
+        {
+            write_file(buffer + 5, client_data->root_directory, client_fd);
+
+            close(client_fd);
+            free(client_data);
+            return NULL;
+        }
+        else if (strncmp(buffer, "READ", 4) == 0)
+        {
+            // Increment the relative path pointer to skip the space characters
+            char *relative_path = buffer + 4;
+            while (*relative_path == ' ')
+                relative_path++;
+
+            // Create the full path
+            char full_path[BUFFER_SIZE];
+            snprintf(full_path, sizeof(full_path), "%s/%s", client_data->root_directory, relative_path);
         }
         else
         {

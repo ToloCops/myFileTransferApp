@@ -10,7 +10,7 @@ int connect_to_server(const char *server_address, int server_port);
 
 void read_file(int socket, const char *file_path);
 
-void write_file(int socket, const char *file_path);
+void write_file(int argc, char **argv);
 
 void list_directory(char **argv);
 
@@ -34,7 +34,14 @@ int main(int argc, char **argv)
         printf("read\n");
         break;
     case 'w':
-        printf("write\n");
+        if (argc == 8 || argc == 10)
+        {
+            write_file(argc, argv);
+        }
+        else
+        {
+            printf("Invalid number of arguments.\n");
+        }
         break;
     default:
         printf("Invalid command.\n");
@@ -65,6 +72,65 @@ int connect_to_server(const char *server_address, int server_port)
     }
 
     return socket_fd;
+}
+
+void write_file(int argc, char **argv)
+{
+    char *server_address;
+    int server_port;
+    char *local_file_path;
+    char *remote_file_path;
+    printf("write_file\n");
+    if (strcmp(argv[2], "-a") != 0 || strcmp(argv[4], "-p") != 0 || strcmp(argv[6], "-f") != 0)
+    {
+        printf("Invalid arguments.\n");
+        return;
+    }
+    server_address = argv[3];
+    printf("server_address: %s\n", server_address);
+    server_port = atoi(argv[5]);
+    printf("server_port: %d\n", server_port);
+    local_file_path = argv[7];
+    printf("local_file_path: %s\n", local_file_path);
+    if (argc == 10)
+    {
+        if (strcmp(argv[8], "-o") != 0)
+        {
+            printf("Invalid arguments.\n");
+            return;
+        }
+        remote_file_path = argv[9];
+        printf("remote_file_path: %s\n", remote_file_path);
+    }
+    else
+    {
+        remote_file_path = local_file_path;
+        printf("remote_file_path: %s\n", remote_file_path);
+    }
+
+    int socket = connect_to_server(server_address, server_port);
+
+    // send file to server
+    char buffer[BUFFER_SIZE];
+    sprintf(buffer, "WRITE %s", remote_file_path);
+    send(socket, buffer, strlen(buffer), 0);
+
+    FILE *file = fopen(local_file_path, "r");
+    if (file == NULL)
+    {
+        perror("File opening failed.");
+        close(socket);
+        exit(EXIT_FAILURE);
+    }
+
+    ssize_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0)
+    {
+        send(socket, buffer, bytes_read, 0);
+    }
+
+    fclose(file);
+    close(socket);
 }
 
 void list_directory(char **argv)
