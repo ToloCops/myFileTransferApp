@@ -198,6 +198,13 @@ void write_file(const char *dir_path, const char *root, int client_fd)
     char full_path[BUFFER_SIZE];
     snprintf(full_path, sizeof(full_path), "%s/%s", root, dir_path);
 
+    // Estrai la directory dal percorso completo
+    char *last_slash = strrchr(full_path, '/');
+    if (last_slash != NULL)
+    {
+        *last_slash = '\0'; // Termina la stringa alla directory
+    }
+
     // Controlla che il percorso sia all'interno della directory root
     char real_path[BUFFER_SIZE];
     if (realpath(full_path, real_path) == NULL || strncmp(real_path, root, strlen(root)) != 0)
@@ -207,8 +214,18 @@ void write_file(const char *dir_path, const char *root, int client_fd)
         return;
     }
 
+    // Ripristina il percorso completo del file
+    if (last_slash != NULL)
+    {
+        *last_slash = '/';
+    }
+
+    // Aggiungi questa parte subito dopo aver verificato il percorso del file
+    const char *confirm_msg = "OK: Ready to receive file\n";
+    send(client_fd, confirm_msg, strlen(confirm_msg), 0);
+
     // Apre il file in modalità scrittura
-    FILE *file = fopen(real_path, "wb");
+    FILE *file = fopen(full_path, "wb");
     if (file == NULL)
     {
         perror("Failed to open file");

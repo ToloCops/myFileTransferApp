@@ -115,6 +115,16 @@ void write_file(int argc, char **argv)
     sprintf(buffer, "WRITE %s", remote_file_path);
     send(socket, buffer, strlen(buffer), 0);
 
+    // Attendi la conferma dal server
+    ssize_t bytes_received = recv(socket, buffer, BUFFER_SIZE, 0);
+    printf("response: %s\n", buffer);
+    if (bytes_received <= 0 || strncmp(buffer, "OK:", 3) != 0)
+    {
+        printf("Failed to receive confirmation from server.\n");
+        close(socket);
+        return;
+    }
+
     FILE *file = fopen(local_file_path, "r");
     if (file == NULL)
     {
