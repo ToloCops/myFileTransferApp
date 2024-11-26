@@ -190,22 +190,22 @@ void get_file_list(const char *rel_path, const char *root, int client_fd)
 
 void write_file(const char *dir_path, const char *root, int client_fd)
 {
-    // Salta eventuali spazi all'inizio del percorso
+    // Skip any spaces at the beginning of the path
     while (*dir_path == ' ')
         dir_path++;
 
-    // Crea il percorso completo del file
+    // Build the full path
     char full_path[BUFFER_SIZE];
     snprintf(full_path, sizeof(full_path), "%s/%s", root, dir_path);
 
-    // Estrai la directory dal percorso completo
+    // Extract the directory path
     char *last_slash = strrchr(full_path, '/');
     if (last_slash != NULL)
     {
         *last_slash = '\0'; // Termina la stringa alla directory
     }
 
-    // Controlla che il percorso sia all'interno della directory root
+    // Check if the path is within the root directory
     char real_path[BUFFER_SIZE];
     if (realpath(full_path, real_path) == NULL || strncmp(real_path, root, strlen(root)) != 0)
     {
@@ -214,17 +214,16 @@ void write_file(const char *dir_path, const char *root, int client_fd)
         return;
     }
 
-    // Ripristina il percorso completo del file
+    // Restore the slash
     if (last_slash != NULL)
     {
         *last_slash = '/';
     }
 
-    // Aggiungi questa parte subito dopo aver verificato il percorso del file
     const char *confirm_msg = "OK: Ready to receive file\n";
     send(client_fd, confirm_msg, strlen(confirm_msg), 0);
 
-    // Apre il file in modalità scrittura
+    // Open the file for writing
     FILE *file = fopen(full_path, "wb");
     if (file == NULL)
     {
@@ -234,14 +233,12 @@ void write_file(const char *dir_path, const char *root, int client_fd)
         return;
     }
 
-    // Buffer per ricevere i dati
     char buffer[BUFFER_SIZE];
     ssize_t bytes_received;
 
-    // Riceve i dati del file dal client
+    // Receive data from the client
     while ((bytes_received = recv(client_fd, buffer, BUFFER_SIZE, 0)) > 0)
     {
-        // Scrive i dati ricevuti nel file
         if (fwrite(buffer, 1, bytes_received, file) != bytes_received)
         {
             perror("Failed to write to file");
@@ -252,10 +249,8 @@ void write_file(const char *dir_path, const char *root, int client_fd)
         }
     }
 
-    // Chiude il file
     fclose(file);
 
-    // Invia un messaggio di successo al client
     const char *success_msg = "OK: File written successfully\n";
     send(client_fd, success_msg, strlen(success_msg), 0);
 
