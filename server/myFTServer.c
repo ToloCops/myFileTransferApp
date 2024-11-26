@@ -24,6 +24,8 @@ void get_file_list(const char *dir_path, const char *root, int client_fd);
 
 void write_file(const char *dir_path, const char *root, int client_fd);
 
+void read_file(const char *dir_path, const char *root, int client_fd);
+
 int main(int argc, char *argv[])
 {
     // Checking number of arguments
@@ -257,6 +259,49 @@ void write_file(const char *dir_path, const char *root, int client_fd)
     return;
 }
 
+void read_file(const char *dir_path, const char *root, int client_fd)
+{
+    // Skip any spaces at the beginning of the path
+    while (*dir_path == ' ')
+        dir_path++;
+
+    // Build the full path
+    char full_path[BUFFER_SIZE];
+    snprintf(full_path, sizeof(full_path), "%s/%s", root, dir_path);
+
+    // Check if the path is within the root directory
+    char real_path[BUFFER_SIZE];
+    if (realpath(full_path, real_path) == NULL || strncmp(real_path, root, strlen(root)) != 0)
+    {
+        const char *error_msg = "ERR: Access to file not allowed\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    // Open the file for reading
+    FILE *file = fopen(full_path, "rb");
+    if (file == NULL)
+    {
+        perror("Failed to open file");
+        const char *error_msg = "ERR: Unable to open file\n";
+        send(client_fd, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+
+    // Send the file data to the client
+    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0)
+    {
+        send(client_fd, buffer, bytes_read, 0);
+    }
+
+    fclose(file);
+
+    return;
+}
+
 void *handle_client(void *arg)
 {
     ClientData *client_data = (ClientData *)arg;
@@ -291,14 +336,11 @@ void *handle_client(void *arg)
         }
         else if (strncmp(buffer, "READ", 4) == 0)
         {
-            // Increment the relative path pointer to skip the space characters
-            char *relative_path = buffer + 4;
-            while (*relative_path == ' ')
-                relative_path++;
+            read_file(buffer + 4, client_data->root_directory, client_fd);
 
-            // Create the full path
-            char full_path[BUFFER_SIZE];
-            snprintf(full_path, sizeof(full_path), "%s/%s", client_data->root_directory, relative_path);
+            close(client_fd);
+            free(client_data);
+            return NULL;
         }
         else
         {

@@ -8,7 +8,7 @@
 
 int connect_to_server(const char *server_address, int server_port);
 
-void read_file(int socket, const char *file_path);
+void read_file(int argc, char **argv);
 
 void write_file(int argc, char **argv);
 
@@ -31,7 +31,14 @@ int main(int argc, char **argv)
         }
         break;
     case 'r':
-        printf("read\n");
+        if (argc == 8 || argc == 10)
+        {
+            read_file(argc, argv);
+        }
+        else
+        {
+            printf("Invalid number of arguments.\n");
+        }
         break;
     case 'w':
         if (argc == 8 || argc == 10)
@@ -72,6 +79,72 @@ int connect_to_server(const char *server_address, int server_port)
     }
 
     return socket_fd;
+}
+
+void read_file(int argc, char **argv)
+{
+    char *server_address;
+    int server_port;
+    char *remote_file_path;
+    char *local_file_path;
+    printf("read_file\n");
+    if (strcmp(argv[2], "-a") != 0 || strcmp(argv[4], "-p") != 0 || strcmp(argv[6], "-f") != 0)
+    {
+        printf("Invalid arguments.\n");
+        return;
+    }
+    server_address = argv[3];
+    printf("server_address: %s\n", server_address);
+    server_port = atoi(argv[5]);
+    printf("server_port: %d\n", server_port);
+    remote_file_path = argv[7];
+    printf("remote_file_path: %s\n", remote_file_path);
+    if (argc == 10)
+    {
+        if (strcmp(argv[8], "-o") != 0)
+        {
+            printf("Invalid arguments.\n");
+            return;
+        }
+        local_file_path = argv[9];
+        printf("local_file_path: %s\n", local_file_path);
+    }
+    else
+    {
+        local_file_path = remote_file_path;
+        printf("local_file_path: %s\n", local_file_path);
+    }
+
+    int socket = connect_to_server(server_address, server_port);
+
+    // send command to server
+    char buffer[BUFFER_SIZE];
+    sprintf(buffer, "READ %s", remote_file_path);
+    send(socket, buffer, strlen(buffer), 0);
+
+    FILE *file = fopen(local_file_path, "w");
+    if (file == NULL)
+    {
+        perror("File opening failed.");
+        close(socket);
+        exit(EXIT_FAILURE);
+    }
+
+    ssize_t bytes_read;
+    while ((bytes_read = recv(socket, buffer, BUFFER_SIZE, 0)) > 0)
+    {
+        if (strncmp(buffer, "ERR:", 4) == 0)
+        {
+            printf("Error: %s\n", buffer + 4);
+            fclose(file);
+            close(socket);
+            return;
+        }
+        fwrite(buffer, 1, bytes_read, file);
+    }
+
+    fclose(file);
+    close(socket);
 }
 
 void write_file(int argc, char **argv)
